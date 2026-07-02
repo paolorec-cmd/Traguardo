@@ -1,0 +1,9 @@
+{
+  "name": "Traguardo",
+  "short_name": "Traguardo",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#EEF0EA",
+  "theme_color": "#1F2B22",
+  "icons": []
+}

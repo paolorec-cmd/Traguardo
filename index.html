@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Traguardo</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1F2B22">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg: #EEF0EA;
+    --surface: #FFFFFF;
+    --surface-2: #E4E7DD;
+    --ink: #1F2B22;
+    --ink-soft: #55604F;
+    --forest: #3D6B4C;
+    --forest-dark: #2A4D35;
+    --gold: #E4A63A;
+    --brick: #C1503F;
+    --line: #D8DBCF;
+    --radius: 16px;
+    --shadow: 0 2px 10px rgba(31,43,34,0.06);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:'Inter', sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    min-height:100vh;
+    padding-bottom:84px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num, .display{ font-family:'Fraunces', serif; }
+  .mono{ font-family:'IBM Plex Mono', monospace; }
+
+  header.topbar{
+    padding:22px 20px 10px;
+    display:flex; align-items:baseline; justify-content:space-between;
+  }
+  header.topbar h1{
+    font-family:'Fraunces', serif; font-weight:600; font-size:26px;
+    letter-spacing:-0.02em;
+  }
+  header.topbar .sync-dot{
+    width:8px; height:8px; border-radius:50%; background:var(--line);
+    display:inline-block; margin-right:6px;
+  }
+  header.topbar .sync-dot.ok{ background:var(--forest); }
+  header.topbar .sync-dot.err{ background:var(--brick); }
+  header.topbar .sync-label{ font-size:12px; color:var(--ink-soft); }
+
+  main{ padding:0 20px; max-width:640px; margin:0 auto; }
+  .view{ display:none; animation:fadein .25s ease; }
+  .view.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+  .card{
+    background:var(--surface); border-radius:var(--radius);
+    padding:18px 20px; margin-bottom:14px; box-shadow:var(--shadow);
+    border:1px solid var(--line);
+  }
+
+  /* ---- Ring (signature element) ---- */
+  .ring-wrap{ display:flex; align-items:center; gap:20px; }
+  .ring-svg{ width:132px; height:132px; flex-shrink:0; }
+  .ring-track{ stroke:var(--surface-2); }
+  .ring-progress{ stroke:var(--forest); stroke-linecap:butt; transition:stroke-dashoffset .6s ease; }
+  .ring-notch{ stroke:var(--gold); stroke-width:2; }
+  .ring-center-num{ font-family:'Fraunces', serif; font-size:15px; }
+  .ring-stats .big{ font-family:'Fraunces', serif; font-size:34px; font-weight:600; line-height:1; }
+  .ring-stats .lbl{ font-size:12px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:4px; }
+  .ring-stats .delta{ font-size:13px; margin-top:10px; }
+  .delta.down{ color:var(--forest); }
+  .delta.up{ color:var(--brick); }
+
+  .stat-row{ display:flex; gap:12px; }
+  .stat-row .card{ flex:1; text-align:center; }
+  .stat-row .val{ font-family:'Fraunces', serif; font-size:24px; font-weight:600; }
+  .stat-row .lbl{ font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.05em; margin-top:2px; }
+
+  h2.section{
+    font-family:'Fraunces', serif; font-size:15px; font-weight:600;
+    color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;
+    margin: 20px 0 10px;
+  }
+
+  canvas#weightChart{ max-height:220px; }
+
+  /* forms */
+  .field{ margin-bottom:12px; }
+  .field label{ display:block; font-size:12px; color:var(--ink-soft); margin-bottom:5px; text-transform:uppercase; letter-spacing:.04em; }
+  .field input, .field select, .field textarea{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line);
+    background:var(--bg); font-family:'Inter'; font-size:15px; color:var(--ink);
+  }
+  .field textarea{ resize:vertical; min-height:60px; }
+  .row2{ display:flex; gap:10px; }
+  .row2 .field{ flex:1; }
+
+  button{ font-family:'Inter'; cursor:pointer; border:none; }
+  .btn-primary{
+    background:var(--forest); color:#fff; padding:13px 18px; border-radius:10px;
+    font-weight:600; font-size:15px; width:100%;
+  }
+  .btn-primary:active{ background:var(--forest-dark); }
+  .btn-secondary{
+    background:var(--surface-2); color:var(--ink); padding:12px 16px; border-radius:10px;
+    font-weight:600; font-size:14px;
+  }
+  .btn-ghost{ background:none; color:var(--forest); font-weight:600; font-size:14px; padding:6px; }
+  .btn-danger-ghost{ background:none; color:var(--brick); font-size:13px; }
+
+  .fab{
+    position:fixed; right:20px; bottom:96px; width:56px; height:56px; border-radius:50%;
+    background:var(--forest); color:#fff; font-size:28px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(42,77,53,0.35); z-index:20;
+  }
+
+  /* list items */
+  .entry{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:12px 0; border-bottom:1px solid var(--line);
+  }
+  .entry:last-child{ border-bottom:none; }
+  .entry .main{ display:flex; flex-direction:column; }
+  .entry .title{ font-weight:600; font-size:14.5px; }
+  .entry .sub{ font-size:12px; color:var(--ink-soft); margin-top:1px; }
+  .entry .value{ font-family:'Fraunces', serif; font-weight:600; font-size:16px; }
+  .entry .del{ background:none; color:var(--ink-soft); font-size:12px; margin-left:10px; }
+
+  .empty{ text-align:center; padding:30px 10px; color:var(--ink-soft); font-size:14px; }
+  .empty .icon{ font-size:30px; margin-bottom:8px; }
+
+  /* modal */
+  .modal-bg{
+    display:none; position:fixed; inset:0; background:rgba(31,43,34,0.45);
+    z-index:50; align-items:flex-end; justify-content:center;
+  }
+  .modal-bg.active{ display:flex; }
+  .modal{
+    background:var(--bg); width:100%; max-width:640px; border-radius:20px 20px 0 0;
+    padding:22px 20px 28px; max-height:88vh; overflow-y:auto;
+  }
+  .modal-handle{ width:36px; height:4px; background:var(--line); border-radius:2px; margin:0 auto 16px; }
+  .modal h3{ font-family:'Fraunces', serif; font-size:19px; margin-bottom:16px; }
+
+  .scan-zone{
+    border:1.5px dashed var(--line); border-radius:12px; padding:20px; text-align:center;
+    color:var(--ink-soft); font-size:13px; margin-bottom:14px; cursor:pointer;
+  }
+  .scan-zone.busy{ color:var(--gold); }
+  .scan-preview{ width:100%; border-radius:10px; margin-bottom:10px; max-height:180px; object-fit:cover; }
+
+  /* bottom nav */
+  nav.bottomnav{
+    position:fixed; bottom:0; left:0; right:0; background:var(--surface);
+    border-top:1px solid var(--line); display:flex; z-index:30;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav.bottomnav button{
+    flex:1; background:none; padding:10px 4px 8px; display:flex; flex-direction:column;
+    align-items:center; gap:3px; color:var(--ink-soft); font-size:10.5px; font-weight:600;
+  }
+  nav.bottomnav button .ic{ font-size:20px; }
+  nav.bottomnav button.active{ color:var(--forest); }
+
+  .toast{
+    position:fixed; top:14px; left:50%; transform:translateX(-50%) translateY(-60px);
+    background:var(--ink); color:#fff; padding:10px 18px; border-radius:30px; font-size:13px;
+    z-index:100; transition:transform .3s ease; box-shadow:0 4px 14px rgba(0,0,0,0.2);
+  }
+  .toast.show{ transform:translateX(-50%) translateY(0); }
+
+  .goal-badge{
+    display:inline-block; background:var(--gold); color:var(--forest-dark); font-weight:700;
+    font-size:11px; padding:3px 9px; border-radius:20px; text-transform:uppercase; letter-spacing:.04em;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Traguardo</h1>
+  <div><span class="sync-dot" id="syncDot"></span><span class="sync-label" id="syncLabel">locale</span></div>
+</header>
+
+<main>
+
+  <!-- ===== VIEW: DASHBOARD ===== -->
+  <section class="view active" id="view-dashboard">
+
+    <div class="card ring-wrap">
+      <svg class="ring-svg" viewBox="0 0 132 132">
+        <circle class="ring-track" cx="66" cy="66" r="56" fill="none" stroke-width="10"/>
+        <circle class="ring-progress" id="ringProgress" cx="66" cy="66" r="56" fill="none" stroke-width="10"
+          stroke-dasharray="351.86" stroke-dashoffset="351.86" transform="rotate(-90 66 66)"/>
+        <text x="66" y="61" text-anchor="middle" class="ring-center-num" id="ringPct" fill="var(--ink)">0%</text>
+        <text x="66" y="76" text-anchor="middle" font-size="9" fill="var(--ink-soft)">al traguardo</text>
+      </svg>
+      <div class="ring-stats">
+        <div class="big" id="currentWeight">--</div>
+        <div class="lbl">peso attuale (kg)</div>
+        <div class="delta" id="weightDelta"></div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="card">
+        <div class="val" id="todayCalories">0</div>
+        <div class="lbl">kcal oggi</div>
+      </div>
+      <div class="card">
+        <div class="val" id="weekWorkouts">0</div>
+        <div class="lbl">allenamenti (7gg)</div>
+      </div>
+      <div class="card">
+        <div class="val" id="goalWeightDisplay">--</div>
+        <div class="lbl">obiettivo kg</div>
+      </div>
+    </div>
+
+    <h2 class="section">Andamento peso</h2>
+    <div class="card">
+      <canvas id="weightChart"></canvas>
+    </div>
+
+  </section>
+
+  <!-- ===== VIEW: PESO ===== -->
+  <section class="view" id="view-peso">
+    <h2 class="section">Registra peso</h2>
+    <div class="card">
+      <div class="row2">
+        <div class="field">
+          <label>Peso (kg)</label>
+          <input type="number" step="0.1" id="wInput" placeholder="es. 78.4">
+        </div>
+        <div class="field">
+          <label>Data</label>
+          <input type="date" id="wDate">
+        </div>
+      </div>
+      <button class="btn-primary" onclick="addWeight()">Aggiungi</button>
+    </div>
+
+    <h2 class="section">Storico</h2>
+    <div class="card" id="weightList"></div>
+  </section>
+
+  <!-- ===== VIEW: PASTI ===== -->
+  <section class="view" id="view-pasti">
+    <div class="card" style="text-align:center;">
+      <div class="lbl" style="text-transform:uppercase; font-size:11px; color:var(--ink-soft);">Totale oggi</div>
+      <div class="display" style="font-size:32px; font-weight:600;" id="mealsTodayTotal">0 kcal</div>
+    </div>
+
+    <button class="btn-secondary" style="width:100%; margin-bottom:14px;" onclick="openMealModal()">+ Aggiungi pasto</button>
+
+    <h2 class="section">Pasti registrati</h2>
+    <div class="card" id="mealsList"></div>
+  </section>
+
+  <!-- ===== VIEW: ALLENAMENTI ===== -->
+  <section class="view" id="view-allenamenti">
+    <h2 class="section">Registra allenamento</h2>
+    <div class="card">
+      <div class="field">
+        <label>Tipo</label>
+        <select id="woType">
+          <option>E-MTB</option>
+          <option>Corsa</option>
+          <option>Camminata</option>
+          <option>Moto (off-road)</option>
+          <option>Palestra</option>
+          <option>Altro</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Durata (min)</label>
+          <input type="number" id="woDuration" placeholder="es. 60">
+        </div>
+        <div class="field">
+          <label>Data</label>
+          <input type="date" id="woDate">
+        </div>
+      </div>
+      <div class="field">
+        <label>Note (opzionale)</label>
+        <input type="text" id="woNotes" placeholder="es. giro Crete Senesi">
+      </div>
+      <button class="btn-primary" onclick="addWorkout()">Aggiungi</button>
+    </div>
+
+    <h2 class="section">Storico</h2>
+    <div class="card" id="workoutList"></div>
+  </section>
+
+  <!-- ===== VIEW: IMPOSTAZIONI ===== -->
+  <section class="view" id="view-impostazioni">
+    <h2 class="section">Obiettivo</h2>
+    <div class="card">
+      <div class="row2">
+        <div class="field">
+          <label>Peso iniziale (kg)</label>
+          <input type="number" step="0.1" id="setStartWeight">
+        </div>
+        <div class="field">
+          <label>Peso obiettivo (kg)</label>
+          <input type="number" step="0.1" id="setGoalWeight">
+        </div>
+      </div>
+      <button class="btn-secondary" onclick="saveGoals()">Salva obiettivo</button>
+    </div>
+
+    <h2 class="section">Sincronizzazione cloud (JSONBin)</h2>
+    <div class="card">
+      <div class="field">
+        <label>Bin ID</label>
+        <input type="text" id="setBinId" placeholder="es. 65f0a1b2c3d4e5f6...">
+      </div>
+      <div class="field">
+        <label>Master/Access Key</label>
+        <input type="text" id="setBinKey" placeholder="$2b$10$...">
+      </div>
+      <button class="btn-secondary" onclick="saveSyncSettings()">Salva</button>
+      <button class="btn-ghost" onclick="manualSync()">Sincronizza ora</button>
+    </div>
+
+    <h2 class="section">Scansione foto AI (pasti)</h2>
+    <div class="card">
+      <div class="field">
+        <label>URL Cloudflare Worker</label>
+        <input type="text" id="setWorkerUrl" placeholder="https://tuo-worker.workers.dev">
+      </div>
+      <button class="btn-secondary" onclick="saveWorkerSettings()">Salva</button>
+    </div>
+
+    <h2 class="section">Dati</h2>
+    <div class="card">
+      <button class="btn-danger-ghost" onclick="exportData()">Esporta backup JSON</button><br><br>
+      <button class="btn-danger-ghost" onclick="resetAllData()">Cancella tutti i dati</button>
+    </div>
+  </section>
+
+</main>
+
+<button class="fab" id="fabBtn" onclick="fabAction()">+</button>
+
+<nav class="bottomnav">
+  <button class="active" data-view="dashboard" onclick="switchView('dashboard')"><span class="ic">◎</span>Progressi</button>
+  <button data-view="peso" onclick="switchView('peso')"><span class="ic">⚖</span>Peso</button>
+  <button data-view="pasti" onclick="switchView('pasti')"><span class="ic">🍽</span>Pasti</button>
+  <button data-view="allenamenti" onclick="switchView('allenamenti')"><span class="ic">🚵</span>Allenam.</button>
+  <button data-view="impostazioni" onclick="switchView('impostazioni')"><span class="ic">⚙</span>Impost.</button>
+</nav>
+
+<!-- ===== MODAL: AGGIUNGI PASTO ===== -->
+<div class="modal-bg" id="mealModalBg">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Aggiungi pasto</h3>
+
+    <div class="scan-zone" id="scanZone" onclick="document.getElementById('photoInput').click()">
+      📷 Tocca per scattare/caricare una foto del piatto — l'AI stima le calorie
+    </div>
+    <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhoto(event)">
+    <img id="scanPreview" class="scan-preview" style="display:none;">
+
+    <div class="field">
+      <label>Nome pasto</label>
+      <input type="text" id="mName" placeholder="es. Pasta al pomodoro">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Calorie (kcal)</label>
+        <input type="number" id="mCalories">
+      </div>
+      <div class="field">
+        <label>Orario</label>
+        <select id="mMeal">
+          <option value="Colazione">Colazione</option>
+          <option value="Pranzo" selected>Pranzo</option>
+          <option value="Cena">Cena</option>
+          <option value="Spuntino">Spuntino</option>
+        </select>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Proteine (g)</label><input type="number" id="mProtein"></div>
+      <div class="field"><label>Carboidrati (g)</label><input type="number" id="mCarbs"></div>
+      <div class="field"><label>Grassi (g)</label><input type="number" id="mFat"></div>
+    </div>
+    <div class="field">
+      <label>Data</label>
+      <input type="date" id="mDate">
+    </div>
+
+    <button class="btn-primary" onclick="addMeal()">Salva pasto</button>
+    <button class="btn-ghost" style="width:100%; text-align:center; margin-top:8px;" onclick="closeMealModal()">Annulla</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===================== STATO E STORAGE ===================== */
+const STORAGE_KEY = 'traguardo_data_v1';
+const SETTINGS_KEY = 'traguardo_settings_v1';
+let scannedPhotoBase64 = null;
+
+let data = {
+  weights: [],    // {id, date, kg}
+  meals: [],      // {id, date, meal, name, calories, protein, carbs, fat}
+  workouts: []    // {id, date, type, duration, notes}
+};
+
+let settings = {
+  startWeight: null,
+  goalWeight: null,
+  binId: '',
+  binKey: '',
+  workerUrl: ''
+};
+
+function loadLocal(){
+  try{
+    const d = localStorage.getItem(STORAGE_KEY);
+    if(d) data = JSON.parse(d);
+    const s = localStorage.getItem(SETTINGS_KEY);
+    if(s) settings = JSON.parse(s);
+  }catch(e){ console.error('load error', e); }
+}
+
+function saveLocal(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+/* ===================== SYNC (JSONBin) ===================== */
+let syncTimer = null;
+
+function setSyncStatus(status){
+  const dot = document.getElementById('syncDot');
+  const lbl = document.getElementById('syncLabel');
+  dot.className = 'sync-dot';
+  if(status === 'ok'){ dot.classList.add('ok'); lbl.textContent = 'sincronizzato'; }
+  else if(status === 'err'){ dot.classList.add('err'); lbl.textContent = 'errore sync'; }
+  else if(status === 'busy'){ lbl.textContent = 'sincronizzo...'; }
+  else { lbl.textContent = 'locale'; }
+}
+
+async function pushToCloud(){
+  if(!settings.binId || !settings.binKey){ setSyncStatus('local'); return; }
+  setSyncStatus('busy');
+  try{
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${settings.binId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': settings.binKey
+      },
+      body: JSON.stringify(data)
+    });
+    if(!res.ok) throw new Error('PUT failed');
+    setSyncStatus('ok');
+  }catch(e){
+    console.error(e);
+    setSyncStatus('err');
+  }
+}
+
+async function pullFromCloud(silent){
+  if(!settings.binId || !settings.binKey){ setSyncStatus('local'); return; }
+  setSyncStatus('busy');
+  try{
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${settings.binId}/latest`, {
+      headers: { 'X-Master-Key': settings.binKey }
+    });
+    if(!res.ok) throw new Error('GET failed');
+    const json = await res.json();
+    if(json.record){
+      data = json.record;
+      saveLocal();
+      renderAll();
+    }
+    setSyncStatus('ok');
+    if(!silent) showToast('Dati sincronizzati');
+  }catch(e){
+    console.error(e);
+    setSyncStatus('err');
+  }
+}
+
+function queueSync(){
+  saveLocal();
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(pushToCloud, 1200);
+}
+
+function manualSync(){ pullFromCloud(false); }
+
+/* ===================== NAVIGATION ===================== */
+function switchView(name){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelectorAll('.bottomnav button').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.bottomnav button[data-view="${name}"]`).classList.add('active');
+  document.getElementById('fabBtn').style.display = (name === 'pasti') ? 'none' : 'flex';
+}
+
+function fabAction(){
+  const active = document.querySelector('.view.active').id;
+  if(active === 'view-dashboard' || active === 'view-peso'){ switchView('peso'); document.getElementById('wInput').focus(); }
+  else if(active === 'view-allenamenti'){ document.getElementById('woDuration').focus(); }
+  else { switchView('peso'); }
+}
+
+/* ===================== TOAST ===================== */
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ===================== PESO ===================== */
+function addWeight(){
+  const kg = parseFloat(document.getElementById('wInput').value);
+  const date = document.getElementById('wDate').value || todayStr();
+  if(!kg || kg <= 0){ showToast('Inserisci un peso valido'); return; }
+  data.weights.push({ id: uid(), date, kg });
+  data.weights.sort((a,b) => a.date.localeCompare(b.date));
+  document.getElementById('wInput').value = '';
+  queueSync();
+  renderAll();
+  showToast('Peso registrato');
+}
+
+function deleteWeight(id){
+  data.weights = data.weights.filter(w => w.id !== id);
+  queueSync();
+  renderAll();
+}
+
+function renderWeightList(){
+  const el = document.getElementById('weightList');
+  if(data.weights.length === 0){
+    el.innerHTML = '<div class="empty"><div class="icon">⚖</div>Nessun peso registrato ancora</div>';
+    return;
+  }
+  const sorted = [...data.weights].sort((a,b) => b.date.localeCompare(a.date));
+  el.innerHTML = sorted.map(w => `
+    <div class="entry">
+      <div class="main">
+        <div class="title">${w.kg.toFixed(1)} kg</div>
+        <div class="sub">${formatDate(w.date)}</div>
+      </div>
+      <button class="del" onclick="deleteWeight('${w.id}')">elimina</button>
+    </div>
+  `).join('');
+}
+
+/* ===================== PASTI ===================== */
+function openMealModal(){
+  document.getElementById('mDate').value = todayStr();
+  document.getElementById('mealModalBg').classList.add('active');
+}
+function closeMealModal(){
+  document.getElementById('mealModalBg').classList.remove('active');
+  document.getElementById('scanPreview').style.display = 'none';
+  document.getElementById('scanZone').style.display = 'block';
+  document.getElementById('scanZone').textContent = '📷 Tocca per scattare/caricare una foto del piatto — l\'AI stima le calorie';
+  scannedPhotoBase64 = null;
+  ['mName','mCalories','mProtein','mCarbs','mFat'].forEach(id => document.getElementById(id).value = '');
+}
+
+function handlePhoto(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    scannedPhotoBase64 = e.target.result.split(',')[1];
+    const preview = document.getElementById('scanPreview');
+    preview.src = e.target.result;
+    preview.style.display = 'block';
+    await scanMealPhoto(scannedPhotoBase64, file.type);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function scanMealPhoto(base64, mimeType){
+  const zone = document.getElementById('scanZone');
+  if(!settings.workerUrl){
+    zone.textContent = '⚠️ Configura l\'URL del Worker in Impostazioni per usare la scansione AI';
+    return;
+  }
+  zone.classList.add('busy');
+  zone.textContent = '🔎 Analisi in corso...';
+  try{
+    const res = await fetch(settings.workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, mimeType: mimeType || 'image/jpeg' })
+    });
+    if(!res.ok) throw new Error('worker error');
+    const result = await res.json();
+    if(result.name) document.getElementById('mName').value = result.name;
+    if(result.calories) document.getElementById('mCalories').value = result.calories;
+    if(result.protein) document.getElementById('mProtein').value = result.protein;
+    if(result.carbs) document.getElementById('mCarbs').value = result.carbs;
+    if(result.fat) document.getElementById('mFat').value = result.fat;
+    zone.textContent = '✅ Stima completata — controlla e modifica se serve';
+  }catch(e){
+    console.error(e);
+    zone.textContent = '⚠️ Scansione non riuscita. Inserisci i dati manualmente.';
+  }
+  zone.classList.remove('busy');
+}
+
+function addMeal(){
+  const name = document.getElementById('mName').value.trim();
+  const calories = parseFloat(document.getElementById('mCalories').value) || 0;
+  if(!name || calories <= 0){ showToast('Inserisci nome e calorie'); return; }
+  data.meals.push({
+    id: uid(),
+    date: document.getElementById('mDate').value || todayStr(),
+    meal: document.getElementById('mMeal').value,
+    name,
+    calories,
+    protein: parseFloat(document.getElementById('mProtein').value) || 0,
+    carbs: parseFloat(document.getElementById('mCarbs').value) || 0,
+    fat: parseFloat(document.getElementById('mFat').value) || 0
+  });
+  queueSync();
+  closeMealModal();
+  renderAll();
+  showToast('Pasto aggiunto');
+}
+
+function deleteMeal(id){
+  data.meals = data.meals.filter(m => m.id !== id);
+  queueSync();
+  renderAll();
+}
+
+function renderMealsList(){
+  const el = document.getElementById('mealsList');
+  if(data.meals.length === 0){
+    el.innerHTML = '<div class="empty"><div class="icon">🍽</div>Nessun pasto registrato ancora</div>';
+    return;
+  }
+  const sorted = [...data.meals].sort((a,b) => b.date.localeCompare(a.date));
+  el.innerHTML = sorted.slice(0, 60).map(m => `
+    <div class="entry">
+      <div class="main">
+        <div class="title">${m.name}</div>
+        <div class="sub">${m.meal} · ${formatDate(m.date)}</div>
+      </div>
+      <div style="display:flex; align-items:center;">
+        <div class="value">${Math.round(m.calories)} kcal</div>
+        <button class="del" onclick="deleteMeal('${m.id}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+
+  const today = todayStr();
+  const totalToday = data.meals.filter(m => m.date === today).reduce((s,m) => s + m.calories, 0);
+  document.getElementById('mealsTodayTotal').textContent = Math.round(totalToday) + ' kcal';
+  document.getElementById('todayCalories').textContent = Math.round(totalToday);
+}
+
+/* ===================== ALLENAMENTI ===================== */
+function addWorkout(){
+  const duration = parseFloat(document.getElementById('woDuration').value);
+  if(!duration || duration <= 0){ showToast('Inserisci una durata valida'); return; }
+  data.workouts.push({
+    id: uid(),
+    date: document.getElementById('woDate').value || todayStr(),
+    type: document.getElementById('woType').value,
+    duration,
+    notes: document.getElementById('woNotes').value.trim()
+  });
+  document.getElementById('woDuration').value = '';
+  document.getElementById('woNotes').value = '';
+  queueSync();
+  renderAll();
+  showToast('Allenamento registrato');
+}
+
+function deleteWorkout(id){
+  data.workouts = data.workouts.filter(w => w.id !== id);
+  queueSync();
+  renderAll();
+}
+
+function renderWorkoutList(){
+  const el = document.getElementById('workoutList');
+  if(data.workouts.length === 0){
+    el.innerHTML = '<div class="empty"><div class="icon">🚵</div>Nessun allenamento registrato ancora</div>';
+    return;
+  }
+  const sorted = [...data.workouts].sort((a,b) => b.date.localeCompare(a.date));
+  el.innerHTML = sorted.map(w => `
+    <div class="entry">
+      <div class="main">
+        <div class="title">${w.type}</div>
+        <div class="sub">${formatDate(w.date)}${w.notes ? ' · ' + w.notes : ''}</div>
+      </div>
+      <div style="display:flex; align-items:center;">
+        <div class="value">${w.duration} min</div>
+        <button class="del" onclick="deleteWorkout('${w.id}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekAgoStr = weekAgo.toISOString().slice(0,10);
+  const countWeek = data.workouts.filter(w => w.date >= weekAgoStr).length;
+  document.getElementById('weekWorkouts').textContent = countWeek;
+}
+
+/* ===================== IMPOSTAZIONI ===================== */
+function saveGoals(){
+  settings.startWeight = parseFloat(document.getElementById('setStartWeight').value) || settings.startWeight;
+  settings.goalWeight = parseFloat(document.getElementById('setGoalWeight').value) || settings.goalWeight;
+  saveLocal();
+  renderAll();
+  showToast('Obiettivo salvato');
+}
+
+function saveSyncSettings(){
+  settings.binId = document.getElementById('setBinId').value.trim();
+  settings.binKey = document.getElementById('setBinKey').value.trim();
+  saveLocal();
+  showToast('Impostazioni di sync salvate');
+  pullFromCloud(true);
+}
+
+function saveWorkerSettings(){
+  settings.workerUrl = document.getElementById('setWorkerUrl').value.trim();
+  saveLocal();
+  showToast('Worker AI salvato');
+}
+
+function exportData(){
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `traguardo-backup-${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function resetAllData(){
+  if(!confirm('Cancellare tutti i dati locali? Questa azione non può essere annullata.')) return;
+  data = { weights: [], meals: [], workouts: [] };
+  queueSync();
+  renderAll();
+  showToast('Dati cancellati');
+}
+
+/* ===================== DASHBOARD / RING / CHART ===================== */
+function formatDate(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+}
+
+let weightChartInstance = null;
+
+function renderDashboard(){
+  const sorted = [...data.weights].sort((a,b) => a.date.localeCompare(b.date));
+  const latest = sorted.length ? sorted[sorted.length - 1] : null;
+
+  document.getElementById('currentWeight').textContent = latest ? latest.kg.toFixed(1) : '--';
+  document.getElementById('goalWeightDisplay').textContent = settings.goalWeight ? settings.goalWeight.toFixed(1) : '--';
+
+  // delta vs previous entry
+  const deltaEl = document.getElementById('weightDelta');
+  if(sorted.length >= 2){
+    const diff = sorted[sorted.length-1].kg - sorted[sorted.length-2].kg;
+    const sign = diff <= 0 ? 'down' : 'up';
+    deltaEl.className = 'delta ' + sign;
+    deltaEl.textContent = (diff <= 0 ? '▼ ' : '▲ ') + Math.abs(diff).toFixed(1) + ' kg dall\'ultima misurazione';
+  } else {
+    deltaEl.textContent = '';
+  }
+
+  // ring progress: start -> goal
+  const circumference = 351.86;
+  let pct = 0;
+  if(settings.startWeight && settings.goalWeight && latest){
+    const total = settings.startWeight - settings.goalWeight;
+    const done = settings.startWeight - latest.kg;
+    pct = total !== 0 ? Math.max(0, Math.min(1, done / total)) : 0;
+  }
+  const offset = circumference * (1 - pct);
+  document.getElementById('ringProgress').style.strokeDashoffset = offset;
+  document.getElementById('ringPct').textContent = Math.round(pct * 100) + '%';
+
+  // chart
+  const ctx = document.getElementById('weightChart');
+  const labels = sorted.map(w => formatDate(w.date));
+  const values = sorted.map(w => w.kg);
+
+  if(weightChartInstance) weightChartInstance.destroy();
+  weightChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: '#3D6B4C',
+        backgroundColor: 'rgba(61,107,76,0.08)',
+        borderWidth: 2.5,
+        pointRadius: 2.5,
+        pointBackgroundColor: '#3D6B4C',
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 10 }, color: '#55604F' } },
+        y: { grid: { color: '#D8DBCF' }, ticks: { font: { family: 'IBM Plex Mono', size: 10 }, color: '#55604F' } }
+      }
+    }
+  });
+}
+
+function renderAll(){
+  renderWeightList();
+  renderMealsList();
+  renderWorkoutList();
+  renderDashboard();
+}
+
+/* ===================== INIT ===================== */
+function initSettingsForm(){
+  document.getElementById('setStartWeight').value = settings.startWeight || '';
+  document.getElementById('setGoalWeight').value = settings.goalWeight || '';
+  document.getElementById('setBinId').value = settings.binId || '';
+  document.getElementById('setBinKey').value = settings.binKey || '';
+  document.getElementById('setWorkerUrl').value = settings.workerUrl || '';
+}
+
+(function init(){
+  loadLocal();
+  document.getElementById('wDate').value = todayStr();
+  document.getElementById('woDate').value = todayStr();
+  initSettingsForm();
+  renderAll();
+  if(settings.binId && settings.binKey){ pullFromCloud(true); }
+  else { setSyncStatus('local'); }
+})();
+</script>
+</body>
+</html>
