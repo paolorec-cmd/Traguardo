@@ -284,9 +284,27 @@
           <input type="number" id="woDuration" placeholder="es. 60">
         </div>
         <div class="field">
-          <label>Data</label>
-          <input type="date" id="woDate">
+          <label>Intensità</label>
+          <select id="woIntensity">
+            <option value="Leggera">Leggera</option>
+            <option value="Moderata" selected>Moderata</option>
+            <option value="Intensa">Intensa</option>
+          </select>
         </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Distanza (km)</label>
+          <input type="number" step="0.1" id="woDistance" placeholder="opzionale">
+        </div>
+        <div class="field">
+          <label>Dislivello (m)</label>
+          <input type="number" id="woElevation" placeholder="opzionale">
+        </div>
+      </div>
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="woDate">
       </div>
       <div class="field">
         <label>Note (opzionale)</label>
@@ -376,8 +394,8 @@
     </div>
     <div class="row2">
       <div class="field">
-        <label>Calorie (kcal)</label>
-        <input type="number" id="mCalories">
+        <label>Peso (g)</label>
+        <input type="number" id="mWeight" oninput="recalcFromWeight()" placeholder="es. 250">
       </div>
       <div class="field">
         <label>Orario</label>
@@ -389,11 +407,16 @@
         </select>
       </div>
     </div>
+    <div class="field">
+      <label>Calorie (kcal)</label>
+      <input type="number" id="mCalories">
+    </div>
     <div class="row2">
       <div class="field"><label>Proteine (g)</label><input type="number" id="mProtein"></div>
       <div class="field"><label>Carboidrati (g)</label><input type="number" id="mCarbs"></div>
       <div class="field"><label>Grassi (g)</label><input type="number" id="mFat"></div>
     </div>
+    <div class="lbl" id="per100gHint" style="font-size:11px; color:var(--ink-soft); margin:-8px 0 12px;"></div>
     <div class="field">
       <label>Data</label>
       <input type="date" id="mDate">
@@ -411,6 +434,7 @@
 const STORAGE_KEY = 'traguardo_data_v1';
 const SETTINGS_KEY = 'traguardo_settings_v1';
 let scannedPhotoBase64 = null;
+let scanPer100g = null;
 
 let data = {
   weights: [],    // {id, date, kg}
@@ -578,7 +602,19 @@ function closeMealModal(){
   document.getElementById('scanZone').style.display = 'block';
   document.getElementById('scanZone').textContent = '📷 Tocca per scattare/caricare una foto del piatto — l\'AI stima le calorie';
   scannedPhotoBase64 = null;
-  ['mName','mCalories','mProtein','mCarbs','mFat'].forEach(id => document.getElementById(id).value = '');
+  scanPer100g = null;
+  document.getElementById('per100gHint').textContent = '';
+  ['mName','mWeight','mCalories','mProtein','mCarbs','mFat'].forEach(id => document.getElementById(id).value = '');
+}
+
+function recalcFromWeight(){
+  if(!scanPer100g) return;
+  const w = parseFloat(document.getElementById('mWeight').value) || 0;
+  const factor = w / 100;
+  document.getElementById('mCalories').value = Math.round(scanPer100g.calories * factor);
+  document.getElementById('mProtein').value = Math.round(scanPer100g.protein * factor * 10) / 10;
+  document.getElementById('mCarbs').value = Math.round(scanPer100g.carbs * factor * 10) / 10;
+  document.getElementById('mFat').value = Math.round(scanPer100g.fat * factor * 10) / 10;
 }
 
 function handlePhoto(event){
@@ -612,11 +648,20 @@ async function scanMealPhoto(base64, mimeType){
     if(!res.ok) throw new Error('worker error');
     const result = await res.json();
     if(result.name) document.getElementById('mName').value = result.name;
-    if(result.calories) document.getElementById('mCalories').value = result.calories;
-    if(result.protein) document.getElementById('mProtein').value = result.protein;
-    if(result.carbs) document.getElementById('mCarbs').value = result.carbs;
-    if(result.fat) document.getElementById('mFat').value = result.fat;
-    zone.textContent = '✅ Stima completata — controlla e modifica se serve';
+    if(result.weight_g) document.getElementById('mWeight').value = result.weight_g;
+
+    scanPer100g = {
+      calories: result.calories_per_100g || 0,
+      protein: result.protein_per_100g || 0,
+      carbs: result.carbs_per_100g || 0,
+      fat: result.fat_per_100g || 0
+    };
+    recalcFromWeight();
+
+    document.getElementById('per100gHint').textContent =
+      `Per 100g: ${Math.round(scanPer100g.calories)} kcal · P ${scanPer100g.protein}g · C ${scanPer100g.carbs}g · G ${scanPer100g.fat}g — modifica il peso per ricalcolare`;
+
+    zone.textContent = '✅ Stima completata — correggi il peso se lo pesi tu, i valori si aggiornano da soli';
   }catch(e){
     console.error(e);
     zone.textContent = '⚠️ Scansione non riuscita. Inserisci i dati manualmente.';
@@ -633,6 +678,7 @@ function addMeal(){
     date: document.getElementById('mDate').value || todayStr(),
     meal: document.getElementById('mMeal').value,
     name,
+    weight: parseFloat(document.getElementById('mWeight').value) || null,
     calories,
     protein: parseFloat(document.getElementById('mProtein').value) || 0,
     carbs: parseFloat(document.getElementById('mCarbs').value) || 0,
@@ -661,7 +707,7 @@ function renderMealsList(){
     <div class="entry">
       <div class="main">
         <div class="title">${m.name}</div>
-        <div class="sub">${m.meal} · ${formatDate(m.date)}</div>
+        <div class="sub">${m.meal} · ${formatDate(m.date)}${m.weight ? ' · ' + m.weight + 'g' : ''}</div>
       </div>
       <div style="display:flex; align-items:center;">
         <div class="value">${Math.round(m.calories)} kcal</div>
@@ -685,9 +731,14 @@ function addWorkout(){
     date: document.getElementById('woDate').value || todayStr(),
     type: document.getElementById('woType').value,
     duration,
+    intensity: document.getElementById('woIntensity').value,
+    distance: parseFloat(document.getElementById('woDistance').value) || null,
+    elevation: parseFloat(document.getElementById('woElevation').value) || null,
     notes: document.getElementById('woNotes').value.trim()
   });
   document.getElementById('woDuration').value = '';
+  document.getElementById('woDistance').value = '';
+  document.getElementById('woElevation').value = '';
   document.getElementById('woNotes').value = '';
   queueSync();
   renderAll();
@@ -707,18 +758,24 @@ function renderWorkoutList(){
     return;
   }
   const sorted = [...data.workouts].sort((a,b) => b.date.localeCompare(a.date));
-  el.innerHTML = sorted.map(w => `
+  el.innerHTML = sorted.map(w => {
+    const extras = [];
+    if(w.distance) extras.push(w.distance + ' km');
+    if(w.elevation) extras.push(w.elevation + ' m D+');
+    const extraStr = extras.length ? ' · ' + extras.join(' · ') : '';
+    return `
     <div class="entry">
       <div class="main">
-        <div class="title">${w.type}</div>
-        <div class="sub">${formatDate(w.date)}${w.notes ? ' · ' + w.notes : ''}</div>
+        <div class="title">${w.type} <span style="font-weight:400; color:var(--ink-soft); font-size:12px;">· ${w.intensity || ''}</span></div>
+        <div class="sub">${formatDate(w.date)}${extraStr}${w.notes ? ' · ' + w.notes : ''}</div>
       </div>
       <div style="display:flex; align-items:center;">
         <div class="value">${w.duration} min</div>
         <button class="del" onclick="deleteWorkout('${w.id}')">✕</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoStr = weekAgo.toISOString().slice(0,10);
@@ -861,6 +918,11 @@ function initSettingsForm(){
   renderAll();
   if(settings.binId && settings.binKey){ pullFromCloud(true); }
   else { setSyncStatus('local'); }
+
+  // Registra il service worker per il funzionamento offline
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./service-worker.js').catch((e) => console.error('SW registration failed', e));
+  }
 })();
 </script>
 </body>

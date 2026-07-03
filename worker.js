@@ -49,11 +49,14 @@ export default {
                 },
                 {
                   type: 'text',
-                  text: `Guarda questa foto di un piatto/pasto e stima nutrizionalmente il suo contenuto.
-Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backtick markdown, nel seguente formato esatto:
-{"name": "nome breve del piatto in italiano", "calories": numero_intero, "protein": numero_intero_grammi, "carbs": numero_intero_grammi, "fat": numero_intero_grammi}
+                  text: `Guarda questa foto di un piatto/pasto.
+1) Stima il peso complessivo della porzione visibile, in grammi.
+2) Fornisci i valori nutrizionali standard PER 100 GRAMMI di quell'alimento/piatto (non della porzione totale, ma per 100g).
 
-Fai una stima realistica basata su una porzione standard visibile nella foto. Se non riesci a identificare il cibo con certezza, fai comunque la stima migliore possibile in base a quello che vedi.`,
+Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backtick markdown, nel seguente formato esatto:
+{"name": "nome breve del piatto in italiano", "weight_g": numero_intero, "calories_per_100g": numero_intero, "protein_per_100g": numero, "carbs_per_100g": numero, "fat_per_100g": numero}
+
+Fai una stima realistica. Se non riesci a identificare il cibo con certezza, fai comunque la stima migliore possibile in base a quello che vedi.`,
                 },
               ],
             },
