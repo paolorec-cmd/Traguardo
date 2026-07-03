@@ -265,6 +265,22 @@
 
   <!-- ===== VIEW: ALLENAMENTI ===== -->
   <section class="view" id="view-allenamenti">
+    <h2 class="section">Riepilogo (7gg)</h2>
+    <div class="stat-row" style="margin-bottom:14px;">
+      <div class="card">
+        <div class="val" id="woWeekCount">0</div>
+        <div class="lbl">Allenamenti</div>
+      </div>
+      <div class="card">
+        <div class="val" id="woWeekKm">0</div>
+        <div class="lbl">Km totali</div>
+      </div>
+      <div class="card">
+        <div class="val" id="woWeekKcal">0</div>
+        <div class="lbl">Kcal bruciate</div>
+      </div>
+    </div>
+
     <h2 class="section">Registra allenamento</h2>
     <div class="card">
       <div class="field">
@@ -315,6 +331,11 @@
 
     <h2 class="section">Storico</h2>
     <div class="card" id="workoutList"></div>
+
+    <h2 class="section">Kcal bruciate (ultimi 14gg)</h2>
+    <div class="card">
+      <canvas id="workoutChart"></canvas>
+    </div>
   </section>
 
   <!-- ===== VIEW: IMPOSTAZIONI ===== -->
@@ -723,17 +744,53 @@ function renderMealsList(){
 }
 
 /* ===================== ALLENAMENTI ===================== */
+const MET_VALUES = {
+  'E-MTB': 6,
+  'Corsa': 9.5,
+  'Camminata': 3.5,
+  'Moto (off-road)': 3,
+  'Palestra': 5,
+  'Altro': 4
+};
+const INTENSITY_FACTOR = { 'Leggera': 0.8, 'Moderata': 1.0, 'Intensa': 1.3 };
+
+function getUserWeightKg(){
+  const sorted = [...data.weights].sort((a,b) => a.date.localeCompare(b.date));
+  if(sorted.length) return sorted[sorted.length - 1].kg;
+  if(settings.startWeight) return settings.startWeight;
+  return 75; // valore di default se non c'è nessun dato
+}
+
+function estimateCaloriesBurned(type, durationMin, intensity, elevationM){
+  const weight = getUserWeightKg();
+  const met = MET_VALUES[type] || 4;
+  const factor = INTENSITY_FACTOR[intensity] || 1;
+  let kcal = met * weight * (durationMin / 60) * factor;
+  if(elevationM){
+    // energia extra per il dislivello; per l'e-MTB il motore riduce lo sforzo umano
+    const climbFactor = type === 'E-MTB' ? 0.5 : 1;
+    kcal += elevationM * weight * 0.001 * climbFactor;
+  }
+  return Math.round(kcal);
+}
+
 function addWorkout(){
   const duration = parseFloat(document.getElementById('woDuration').value);
   if(!duration || duration <= 0){ showToast('Inserisci una durata valida'); return; }
+  const intensity = document.getElementById('woIntensity').value;
+  const distance = parseFloat(document.getElementById('woDistance').value) || null;
+  const elevation = parseFloat(document.getElementById('woElevation').value) || null;
+  const type = document.getElementById('woType').value;
+
   data.workouts.push({
     id: uid(),
     date: document.getElementById('woDate').value || todayStr(),
-    type: document.getElementById('woType').value,
+    type,
     duration,
-    intensity: document.getElementById('woIntensity').value,
-    distance: parseFloat(document.getElementById('woDistance').value) || null,
-    elevation: parseFloat(document.getElementById('woElevation').value) || null,
+    intensity,
+    distance,
+    elevation,
+    caloriesBurned: estimateCaloriesBurned(type, duration, intensity, elevation),
     notes: document.getElementById('woNotes').value.trim()
   });
   document.getElementById('woDuration').value = '';
@@ -762,6 +819,7 @@ function renderWorkoutList(){
     const extras = [];
     if(w.distance) extras.push(w.distance + ' km');
     if(w.elevation) extras.push(w.elevation + ' m D+');
+    if(w.caloriesBurned) extras.push('~' + w.caloriesBurned + ' kcal');
     const extraStr = extras.length ? ' · ' + extras.join(' · ') : '';
     return `
     <div class="entry">
@@ -779,9 +837,56 @@ function renderWorkoutList(){
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoStr = weekAgo.toISOString().slice(0,10);
-  const countWeek = data.workouts.filter(w => w.date >= weekAgoStr).length;
-  document.getElementById('weekWorkouts').textContent = countWeek;
+  const weekWorkouts = data.workouts.filter(w => w.date >= weekAgoStr);
+  document.getElementById('weekWorkouts').textContent = weekWorkouts.length;
+
+  // Riepilogo settimanale nella scheda Allenamenti
+  const weekKm = weekWorkouts.reduce((s,w) => s + (w.distance || 0), 0);
+  const weekKcal = weekWorkouts.reduce((s,w) => s + (w.caloriesBurned || 0), 0);
+  document.getElementById('woWeekCount').textContent = weekWorkouts.length;
+  document.getElementById('woWeekKm').textContent = weekKm ? weekKm.toFixed(1) : '0';
+  document.getElementById('woWeekKcal').textContent = Math.round(weekKcal);
+
+  renderWorkoutChart();
 }
+
+let workoutChartInstance = null;
+
+function renderWorkoutChart(){
+  const ctx = document.getElementById('workoutChart');
+  if(!ctx) return;
+
+  // Costruisce gli ultimi 14 giorni e somma le kcal bruciate per giorno
+  const days = [];
+  for(let i = 13; i >= 0; i--){
+    const d = new Date(); d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0,10));
+  }
+  const kcalByDay = days.map(day =>
+    data.workouts.filter(w => w.date === day).reduce((s,w) => s + (w.caloriesBurned || 0), 0)
+  );
+  const labels = days.map(day => formatDate(day));
+
+  if(workoutChartInstance) workoutChartInstance.destroy();
+  workoutChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: kcalByDay,
+        backgroundColor: '#E4A63A',
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 9 }, color: '#55604F' } },
+        y: { grid: { color: '#D8DBCF' }, ticks: { font: { family: 'IBM Plex Mono', size: 10 }, color: '#55604F' } }
+      }
+    }
+  });
 
 /* ===================== IMPOSTAZIONI ===================== */
 function saveGoals(){
