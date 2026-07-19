@@ -410,6 +410,12 @@
     <img id="scanPreview" class="scan-preview" style="display:none;">
 
     <div class="field">
+      <label>Cerca nel tuo archivio o online</label>
+      <input type="text" id="mSearch" oninput="onFoodSearchInput()" placeholder="es. pasta al pomodoro">
+      <div id="mSearchResults" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="field">
       <label>Nome pasto</label>
       <input type="text" id="mName" placeholder="es. Pasta al pomodoro">
     </div>
@@ -443,6 +449,11 @@
       <input type="date" id="mDate">
     </div>
 
+    <div class="field" style="display:flex; align-items:center; gap:8px;">
+      <input type="checkbox" id="mSaveToArchive" checked style="width:18px; height:18px;">
+      <label style="text-transform:none; font-size:13px; margin:0;" for="mSaveToArchive">Salva questo alimento nel mio archivio</label>
+    </div>
+
     <button class="btn-primary" onclick="addMeal()">Salva pasto</button>
     <button class="btn-ghost" style="width:100%; text-align:center; margin-top:8px;" onclick="closeMealModal()">Annulla</button>
   </div>
@@ -460,7 +471,8 @@ let scanPer100g = null;
 let data = {
   weights: [],    // {id, date, kg}
   meals: [],      // {id, date, meal, name, calories, protein, carbs, fat}
-  workouts: []    // {id, date, type, duration, notes}
+  workouts: [],   // {id, date, type, duration, notes}
+  foods: []       // {id, name, caloriesPer100g, proteinPer100g, carbsPer100g, fatPer100g}
 };
 
 let settings = {
@@ -475,6 +487,7 @@ function loadLocal(){
   try{
     const d = localStorage.getItem(STORAGE_KEY);
     if(d) data = JSON.parse(d);
+    if(!data.foods) data.foods = [];
     const s = localStorage.getItem(SETTINGS_KEY);
     if(s) settings = JSON.parse(s);
   }catch(e){ console.error('load error', e); }
@@ -532,6 +545,7 @@ async function pullFromCloud(silent){
     const json = await res.json();
     if(json.record){
       data = json.record;
+      if(!data.foods) data.foods = [];
       saveLocal();
       renderAll();
     }
@@ -625,6 +639,9 @@ function closeMealModal(){
   scannedPhotoBase64 = null;
   scanPer100g = null;
   document.getElementById('per100gHint').textContent = '';
+  document.getElementById('mSearch').value = '';
+  document.getElementById('mSearchResults').innerHTML = '';
+  document.getElementById('mSaveToArchive').checked = true;
   ['mName','mWeight','mCalories','mProtein','mCarbs','mFat'].forEach(id => document.getElementById(id).value = '');
 }
 
@@ -693,18 +710,35 @@ async function scanMealPhoto(base64, mimeType){
 function addMeal(){
   const name = document.getElementById('mName').value.trim();
   const calories = parseFloat(document.getElementById('mCalories').value) || 0;
+  const weight = parseFloat(document.getElementById('mWeight').value) || null;
   if(!name || calories <= 0){ showToast('Inserisci nome e calorie'); return; }
+  const protein = parseFloat(document.getElementById('mProtein').value) || 0;
+  const carbs = parseFloat(document.getElementById('mCarbs').value) || 0;
+  const fat = parseFloat(document.getElementById('mFat').value) || 0;
+
   data.meals.push({
     id: uid(),
     date: document.getElementById('mDate').value || todayStr(),
     meal: document.getElementById('mMeal').value,
     name,
-    weight: parseFloat(document.getElementById('mWeight').value) || null,
+    weight,
     calories,
-    protein: parseFloat(document.getElementById('mProtein').value) || 0,
-    carbs: parseFloat(document.getElementById('mCarbs').value) || 0,
-    fat: parseFloat(document.getElementById('mFat').value) || 0
+    protein,
+    carbs,
+    fat
   });
+
+  if(document.getElementById('mSaveToArchive').checked){
+    // Usa i valori "per 100g" già noti (da scansione o da ricerca), oppure li ricava dal peso inserito
+    const per100g = scanPer100g || (weight ? {
+      calories: Math.round(calories / weight * 100),
+      protein: Math.round(protein / weight * 100 * 10) / 10,
+      carbs: Math.round(carbs / weight * 100 * 10) / 10,
+      fat: Math.round(fat / weight * 100 * 10) / 10
+    } : null);
+    if(per100g) saveFoodToArchive(name, per100g);
+  }
+
   queueSync();
   closeMealModal();
   renderAll();
@@ -743,7 +777,99 @@ function renderMealsList(){
   document.getElementById('todayCalories').textContent = Math.round(totalToday);
 }
 
-/* ===================== ALLENAMENTI ===================== */
+/* ===================== ARCHIVIO ALIMENTI E RICERCA ===================== */
+let foodSearchTimer = null;
+
+function onFoodSearchInput(){
+  clearTimeout(foodSearchTimer);
+  const query = document.getElementById('mSearch').value.trim();
+  const resultsEl = document.getElementById('mSearchResults');
+  if(query.length < 2){ resultsEl.innerHTML = ''; return; }
+
+  // Risultati dall'archivio personale, immediati
+  const localMatches = data.foods.filter(f => f.name.toLowerCase().includes(query.toLowerCase())).slice(0, 4);
+  renderFoodSearchResults(localMatches, []);
+
+  // Ricerca online con un piccolo ritardo, per non mandare una richiesta a ogni lettera digitata
+  foodSearchTimer = setTimeout(() => searchOpenFoodFacts(query, localMatches), 500);
+}
+
+async function searchOpenFoodFacts(query, localMatches){
+  try{
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5&fields=product_name,nutriments`;
+    const res = await fetch(url);
+    if(!res.ok) return;
+    const json = await res.json();
+    const online = (json.products || [])
+      .filter(p => p.product_name && p.nutriments && p.nutriments['energy-kcal_100g'])
+      .map(p => ({
+        name: p.product_name,
+        caloriesPer100g: Math.round(p.nutriments['energy-kcal_100g'] || 0),
+        proteinPer100g: Math.round((p.nutriments['proteins_100g'] || 0) * 10) / 10,
+        carbsPer100g: Math.round((p.nutriments['carbohydrates_100g'] || 0) * 10) / 10,
+        fatPer100g: Math.round((p.nutriments['fat_100g'] || 0) * 10) / 10
+      }))
+      .slice(0, 4);
+    renderFoodSearchResults(localMatches, online);
+  }catch(e){
+    console.error('Open Food Facts search error', e);
+  }
+}
+
+function renderFoodSearchResults(localMatches, onlineMatches){
+  const resultsEl = document.getElementById('mSearchResults');
+  let html = '';
+  if(localMatches.length){
+    html += `<div style="font-size:11px; color:var(--ink-soft); margin:6px 0 3px;">DAL TUO ARCHIVIO</div>`;
+    html += localMatches.map(f => `
+      <div onclick='selectFoodResult(${JSON.stringify(f).replace(/'/g, "&#39;")})' style="padding:8px 10px; background:var(--surface-2); border-radius:8px; margin-bottom:4px; font-size:13px; cursor:pointer;">
+        <strong>${f.name}</strong> — ${f.caloriesPer100g} kcal/100g
+      </div>`).join('');
+  }
+  if(onlineMatches && onlineMatches.length){
+    html += `<div style="font-size:11px; color:var(--ink-soft); margin:6px 0 3px;">ONLINE (Open Food Facts)</div>`;
+    html += onlineMatches.map(f => `
+      <div onclick='selectFoodResult(${JSON.stringify(f).replace(/'/g, "&#39;")})' style="padding:8px 10px; background:var(--bg); border:1px solid var(--line); border-radius:8px; margin-bottom:4px; font-size:13px; cursor:pointer;">
+        <strong>${f.name}</strong> — ${f.caloriesPer100g} kcal/100g
+      </div>`).join('');
+  }
+  resultsEl.innerHTML = html;
+}
+
+function selectFoodResult(food){
+  document.getElementById('mName').value = food.name;
+  document.getElementById('mSearch').value = '';
+  document.getElementById('mSearchResults').innerHTML = '';
+  scanPer100g = {
+    calories: food.caloriesPer100g,
+    protein: food.proteinPer100g,
+    carbs: food.carbsPer100g,
+    fat: food.fatPer100g
+  };
+  if(!document.getElementById('mWeight').value) document.getElementById('mWeight').value = 100;
+  recalcFromWeight();
+  document.getElementById('per100gHint').textContent =
+    `Per 100g: ${Math.round(scanPer100g.calories)} kcal · P ${scanPer100g.protein}g · C ${scanPer100g.carbs}g · G ${scanPer100g.fat}g`;
+  // Se l'alimento è già nel proprio archivio, non serve richiederne il salvataggio di nuovo
+  const alreadySaved = data.foods.some(f => f.name.toLowerCase() === food.name.toLowerCase());
+  document.getElementById('mSaveToArchive').checked = !alreadySaved;
+}
+
+function saveFoodToArchive(name, per100g){
+  if(!name || !per100g) return;
+  const existingIndex = data.foods.findIndex(f => f.name.toLowerCase() === name.toLowerCase());
+  const entry = {
+    id: existingIndex >= 0 ? data.foods[existingIndex].id : uid(),
+    name,
+    caloriesPer100g: per100g.calories,
+    proteinPer100g: per100g.protein,
+    carbsPer100g: per100g.carbs,
+    fatPer100g: per100g.fat
+  };
+  if(existingIndex >= 0) data.foods[existingIndex] = entry;
+  else data.foods.push(entry);
+}
+
 const MET_VALUES = {
   'E-MTB': 6,
   'Corsa': 9.5,
@@ -924,7 +1050,7 @@ function exportData(){
 
 function resetAllData(){
   if(!confirm('Cancellare tutti i dati locali? Questa azione non può essere annullata.')) return;
-  data = { weights: [], meals: [], workouts: [] };
+  data = { weights: [], meals: [], workouts: [], foods: [] };
   queueSync();
   renderAll();
   showToast('Dati cancellati');
